@@ -11,7 +11,8 @@ pod.
 The container will run its own control-tier which will re-configure the proxy
 configuration anytime downstream listeners are added or removed. Any downstream
 entity wishing to be included in the proxy configuration **must** specify this
-pod as its *kontrol* master.
+pod as its *kontrol* master. The proxy configuration itself is specified directly
+into the pod YAML manifest.
 
 ### Lifecycle
 
@@ -29,6 +30,21 @@ The initial state will render the various configuration files including the
 thru one or more configuration sequences with the file written under */data*. The
 proxy supervisor job is then restarted. Any change detected by *kontrol* will trip
 the state-machine back to that configuration state.
+
+### Statistics
+
+The plugin run by *telegraf* will attempt to access the proxy *stats* API. Simply
+enable statistics in your proxy configuration and they will be relayed automatically
+to our *opentsdb* endpoint. The following configuration block is all your need:
+
+```
+listen stats
+  bind :1936
+  mode http
+  stats enable
+  stats hide-version
+  stats uri /haproxy
+```
 
 ### TLS support
 
@@ -48,6 +64,13 @@ annotations:
     frontend proxy
       bind                *:80
       default_backend     http
+    
+    listen stats
+      bind                :1936
+      mode                http
+      stats               enable
+      stats               hide-version
+      stats uri           /haproxy
 
     backend http
       mode                http
