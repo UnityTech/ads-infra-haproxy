@@ -1,0 +1,65 @@
+#
+# - state-machine controlling a HAProxy process
+# - please note /data/state will be used as our kontrol slave payload
+#
+initial: setup
+terminal: stop
+states:
+- tag: setup
+  shell: |
+
+    #
+    # - make sure /data is there
+    #
+    mkdir -p /data
+
+    #
+    # - append the haproxy + statsd telegraf input
+    # - start telegraf
+    #
+    cat << EOT >> /etc/telegraf/telegraf.conf
+    [[inputs.statsd]]
+      service_address = "127.0.0.1:8125"
+    [[inputs.haproxy]]
+    EOT
+    supervisorctl start telegraf
+  next:
+    - configure
+
+- tag: configure
+  shell: |
+
+    python - <<-EOF
+    import os
+    import json
+    from jinja2 import Template
+
+    #
+    # - peek into the annotations
+    # - render the configuration found under haproxy.unity3d.com/config
+    #
+    try:
+      js = json.loads(os.environ['KONTROL_ANNOTATIONS'])
+      cfg = js['haproxy.unity3d.com/config']
+      with open('/data/proxy.cfg', 'wb') as fd:
+          fd.write(Template(cfg).render(hosts=json.loads(os.environ['INPUT'])))    
+      
+    except (KeyError, ValueError, TypeError):
+      pass
+    EOF
+
+    #
+    # - restart the wrapper script
+    # - this will force a reload of the HAProxy configuration
+    # - SYN packets will also be disabled during that time
+    #
+    supervisorctl restart haproxy  
+  next: 
+    - configure
+    - stop
+
+- tag: stop
+  shell: |
+    sleep 1
+  next: 
+    - stop
