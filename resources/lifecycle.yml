@@ -10,8 +10,10 @@ states:
 
     #
     # - make sure /data is there
+    # - output the underlying node's external IP in /data/state.json
     #
     mkdir -p /data
+    echo '{"eip": "'$KONTROL_EIP'"}' > /data/state.json
 
     #
     # - append the haproxy + statsd telegraf input

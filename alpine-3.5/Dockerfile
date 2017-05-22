@@ -1,7 +1,7 @@
 FROM registry2.applifier.info:5005/ads-infra-kontrol-alpine-3.5
 
 ENV KONTROL_MODE=master,slave,verbose \
-    KONTROL_PAYLOAD=/data/state \
+    KONTROL_PAYLOAD=/data/state.json \
     KONTROL_CALLBACK="python /home/kontrol/callback.py" \
     HAPROXY_MAJOR=1.7 \
     HAPROXY_VERSION=1.7.5 \
@@ -24,8 +24,8 @@ RUN set -ex && \
 		  INSTALL_CMOD='/usr/src/lua/trash/cmod' \
 		  INSTALL_LMOD='/usr/src/lua/trash/lmod' \
 		  INSTALL_MAN='/usr/src/lua/trash/man' \
-  		INSTALL_INC='/usr/local/lua-install/inc' \
-	  	INSTALL_LIB='/usr/local/lua-install/lib' && \
+          INSTALL_INC='/usr/local/lua-install/inc' \
+	  	  INSTALL_LIB='/usr/local/lua-install/lib' && \
     rm -rf /usr/src/lua && \
     wget -O haproxy.tar.gz "http://www.haproxy.org/download/${HAPROXY_MAJOR}/src/haproxy-${HAPROXY_VERSION}.tar.gz" && \
 	  echo "$HAPROXY_MD5 *haproxy.tar.gz" | md5sum -c && \
@@ -54,4 +54,5 @@ RUN set -ex && \
 	   )" &&\
       apk add --virtual .haproxy-rundeps $runDeps && \
 	  chmod +x wrapped.sh && \
+	  pip install shell awscli && \
 	  apk del .build-deps
