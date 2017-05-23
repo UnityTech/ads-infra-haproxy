@@ -15,8 +15,7 @@ for_each_port()
 #
 # - drop SYN packets by injecting a new rule for each port
 #
-for_each_port 'iptables -I INPUT -p tcp --dport $port -i eth0 --tcp-flags SYN,ACK,FIN,RST SYN -j DROP && 
-echo disabled SYN packets on TCP $port'
+for_each_port 'iptables -I INPUT -p tcp --dport $port -i eth0 --tcp-flags SYN,ACK,FIN,RST SYN -j DROP'
 
 #
 # - pause a bit
@@ -26,18 +25,16 @@ echo disabled SYN packets on TCP $port'
 sleep 1
 PID=/data/proxy.pid
 /usr/local/sbin/haproxy -p $PID -f /data/proxy.cfg -D -sf $(cat $PID) > /data/proxy.out 2>&1
-echo proxy (re-)started as PID $PID
 
 #
 # - re-enable SYN packets on the ports
 #
-for_each_port 'iptables -D INPUT -p tcp --dport $port -i eth0 --tcp-flags SYN,ACK,FIN,RST SYN -j DROP &&
-echo enabled SYN packets on TCP $port'
+for_each_port 'iptables -D INPUT -p tcp --dport $port -i eth0 --tcp-flags SYN,ACK,FIN,RST SYN -j DROP'
 
 #
 # - idle the wrapper script as long as the process is running
 # - please note haproxy will run in the background
 # - if somehow haproxy dies the wrapper script will fail and the pod will restart it
 #
-while ls /proc/$(cat /data/proxy.pid); do sleep 1; done
+while ls /proc/$(cat /data/proxy.pid); do sleep 5; done
 exit 1
