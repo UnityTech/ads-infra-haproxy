@@ -1,19 +1,38 @@
 #!/bin/sh
 
 #
-# - drop SYN packets
-# - pause a bit
+# - find out on what ports the proxy is configured to bind
+# - those ports are extracted from /data/proxy.cfg
 #
-iptables -I INPUT -p tcp -m multiport —dports 80,443 —syn -j DROP
-sleep 1
+for_each_port()
+{
+    grep bind /data/proxy.cfg | while read -r line; do
+        port=$(echo $line | cut -d ":" -f2)
+        eval $1
+    done
+}
 
 #
-# - reload haproxy
-# - un-drop SYN packets
+# - drop SYN packets by injecting a new rule for each port
 #
+for_each_port 'iptables -I INPUT -p tcp --dport $port -i eth0 --tcp-flags SYN,ACK,FIN,RST SYN -j DROP && 
+echo disabled SYN packets on TCP $port'
+
+#
+# - pause a bit
+# - reload haproxy
+# - any warning will land in /data/proxy.out
+#
+sleep 1
 PID=/data/proxy.pid
-/usr/local/sbin/haproxy -p $PID -f /data/proxy.cfg -D -sf $(cat $PID)
-iptables -D INPUT -p -tcp -m multiport —dports 80,443 —syn -j DROP
+/usr/local/sbin/haproxy -p $PID -f /data/proxy.cfg -D -sf $(cat $PID) > /data/proxy.out 2>&1
+echo proxy (re-)started as PID $PID
+
+#
+# - re-enable SYN packets on the ports
+#
+for_each_port 'iptables -D INPUT -p tcp --dport $port -i eth0 --tcp-flags SYN,ACK,FIN,RST SYN -j DROP &&
+echo enabled SYN packets on TCP $port'
 
 #
 # - idle the wrapper script as long as the process is running

@@ -12,7 +12,7 @@ ENV KONTROL_MODE=master,slave,verbose \
 ADD resources/ .
 RUN set -ex && \
     apk upgrade --update && \
-    apk add --no-cache --virtual .build-deps ca-certificates gcc libc-dev linux-headers make openssl openssl-dev pcre-dev readline-dev tar zlib-dev && \
+    apk add --no-cache --virtual .build-deps ca-certificates gcc libc-dev linux-headers make openssl openssl-dev pcre-dev readline-dev tar zlib-dev iptables && \
     wget -O lua.tar.gz "https://www.lua.org/ftp/lua-$LUA_VERSION.tar.gz" && \
     echo "$LUA_SHA1 *lua.tar.gz" | sha1sum -c && \
     mkdir -p /usr/src/lua && \
@@ -55,4 +55,5 @@ RUN set -ex && \
       apk add --virtual .haproxy-rundeps $runDeps && \
 	  chmod +x wrapped.sh && \
 	  pip install shell awscli && \
-	  apk del .build-deps
+	  apk del .build-deps && \
+	  apk add iptables

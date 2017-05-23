@@ -19,8 +19,23 @@ into the pod YAML manifest.
 The HAProxy instance is driven as a regular supervisor job via the *wrapped.sh* script.
 This scipt will launch a daemon proxy and keep track of its PID file. Restarting the
 job will spawn a new HAProxy process and gracefully drain the old on. During this
-transition SYN packets will be disabled via *iptables*. Please look at *lifecycle.yml*
-for more details.
+transition SYN packets will be disabled via *iptables* for each bound port (as defined
+in the proxy configuration file). Please look at *lifecycle.yml* for more details.
+
+Note the pod **must** be started with the **NET_ADMIN** capability set (otherwise the
+calls to *iptables* will fail). This can be nicely done in the YAML manifest, for
+instance:
+
+```
+      containers:
+       - image: registry2.applifier.info:5005/ads-infra-haproxy-alpine-3.5
+         name: zookeeper
+         imagePullPolicy: Always
+         securityContext:
+           capabilities:
+             add:
+               - NET_ADMIN
+```
 
 The *kontrol* callback will isolate slaves that are not HAProxy and ask the proxy pods
 to re-configure using their IP addresses.
@@ -135,7 +150,7 @@ spec:
         haproxy.unity3d.com/config: |
 
           frontend proxy
-            bind            *:80
+            bind            *:2181
             default_backend service
 
           backend service
@@ -163,6 +178,10 @@ spec:
        - image: registry2.applifier.info:5005/ads-infra-haproxy-alpine-3.5
          name: zookeeper
          imagePullPolicy: Always
+         securityContext:
+           capabilities:
+             add:
+               - NET_ADMIN
          ports:
          - containerPort: 80
            protocol: TCP
