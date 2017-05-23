@@ -29,7 +29,7 @@ instance:
 ```
       containers:
        - image: registry2.applifier.info:5005/ads-infra-haproxy-alpine-3.5
-         name: zookeeper
+         name: haproxy
          imagePullPolicy: Always
          securityContext:
            capabilities:
@@ -176,7 +176,7 @@ spec:
               topologyKey: "kubernetes.io/hostname"
       containers:
        - image: registry2.applifier.info:5005/ads-infra-haproxy-alpine-3.5
-         name: zookeeper
+         name: haproxy
          imagePullPolicy: Always
          securityContext:
            capabilities:
