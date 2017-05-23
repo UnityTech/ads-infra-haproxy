@@ -128,8 +128,8 @@ $ docker build -f alpine-3.5/Dockerfile .
 
 ### Manifest
 
-Simply use this pod in a deployment and assign it to an array with external
-access using a node-port service. For instance:
+Simply use this pod in a deployment and assign it to an array with external access using a
+node-port service to clamp onto the desired port. For instance:
 
 ```
 apiVersion: extensions/v1beta1
@@ -151,9 +151,9 @@ spec:
 
           frontend proxy
             bind            *:2181
-            default_backend service
+            default_backend zookeeper
 
-          backend service
+          backend zookeeper
             mode tcp
             {%- for key in hosts %}
             {%- for ip in hosts[key] %}
@@ -183,7 +183,7 @@ spec:
              add:
                - NET_ADMIN
          ports:
-         - containerPort: 80
+         - containerPort: 2181
            protocol: TCP
          - containerPort: 443
            protocol: TCP
