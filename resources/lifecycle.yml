@@ -3,7 +3,7 @@
 # - please note /data/state will be used as our kontrol slave payload
 #
 initial: setup
-terminal: stop
+terminal: shutdown
 states:
 - tag: setup
   shell: |
@@ -58,10 +58,5 @@ states:
     supervisorctl restart haproxy  
   next: 
     - configure
-    - stop
 
-- tag: stop
-  shell: |
-    sleep 1
-  next: 
-    - stop
+- tag: shutdown
