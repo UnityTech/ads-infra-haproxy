@@ -64,14 +64,15 @@ listen stats
 ### Route53 record update
 
 You can get the proxy pods to automatically update a specific A record in Route53:
-set the *haproxy.unity3d.com/route53* annotation to the zone ID and domain name you
-wish to use. For instance:
+set the *haproxy.unity3d.com/route53* annotation to the domain name you wish to use.
+For instance:
 
 ```
-haproxy.unity3d.com/route53: Z32EYNT4NK0KNG:proxy.sandbox.k8s-dev.applifier.info
+haproxy.unity3d.com/route53: haproxy.sandbox-us-east-1a.k8s-dev.applifier.info
 ```
 
-The A record value will map to 1+ external IP addresses (one for each proxy pod).
+The A record value will map to 1+ external IP addresses, one for each proxy pod. Please
+note the specified domain **must** map to a valid Route53 hosted zone.
 
 ### TLS support
 

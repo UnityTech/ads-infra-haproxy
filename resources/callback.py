@@ -42,6 +42,11 @@ if __name__ == '__main__':
     js = json.loads(os.environ['KONTROL_ANNOTATIONS'])
     if 'haproxy.unity3d.com/route53' in js:
 
+        #
+        # - extract the zone ID + the domain name
+        # - render our little jinja2 template (e.g the AWS CLI json request blurb)
+        # - use the external IP reported by each proxy pod in its payload
+        #
         raw = \
         """
         {
@@ -58,21 +63,15 @@ if __name__ == '__main__':
         }
         """
 
-        #
-        # - extract the zone ID + the domain name
-        # - render our little jinja2 template (e.g the AWS CLI json request blurb)
-        # - use the external IP reported by each proxy pod in its payload
-        #
-        tokens = js['haproxy.unity3d.com/route53'].split(':')
+        domain = js['haproxy.unity3d.com/route53']
         ips = [pod['payload']['eip'] for pod in pods if pod['app'] == 'haproxy']
         with open('/data/route53.js', 'wb') as fd:
-            fd.write(Template(raw).render(domain=tokens[1], values=json.dumps([{'Value': ip} for ip in ips])))
+            fd.write(Template(raw).render(domain=domain, values=json.dumps([{'Value': ip} for ip in ips])))
 
-        #
-        # - fire the request by invoking the CLI
-        #
-        print >> sys.stderr, 'A record (%s) updated with %s' % (tokens[1], ', '.join(ips))
-        shell.shell('aws route53 change-resource-record-sets --hosted-zone-id %s --change-batch file:///data/route53.js' % tokens[0])
+        root = '.'.join(domain.split('.')[1:])
+        js = json.loads(''.join(shell.shell('aws route53 list-hosted-zones-by-name --max-items 1 --dns-name %s.' % root).output()))
+        zid = js['HostedZones'][0]['Id'][12:]
+        shell.shell('aws route53 change-resource-record-sets --hosted-zone-id %s --change-batch file:///data/route53.js' % zid)
 
     #
     # - keep the HAProxy pods apart
