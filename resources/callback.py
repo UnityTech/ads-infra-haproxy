@@ -3,8 +3,8 @@
 import hashlib
 import json
 import os
+import random
 import requests
-import shell
 import sys
 
 from jinja2 import Template
@@ -25,6 +25,7 @@ if __name__ == '__main__':
     # - retrieve the latest state if any via $STATE
     # - build the map of arrays
     #
+    labels = json.loads(os.environ['KONTROL_LABELS'])
     pods = json.loads(os.environ['PODS'])
     keys = set([pod['app'] for pod in pods])
     last = json.loads(os.environ['STATE']) if 'STATE' in os.environ else {'md5': None}
@@ -33,52 +34,12 @@ if __name__ == '__main__':
         hosts[pod['app']].append(pod['ip'])
 
     #
-    # - blindly update Route53 with a single A record
-    # - this record will hold 1+ external IPs for all the haproxies
-    # - this code path is conditional to having the proper annotation set
-    #
-    # @todo what about other providers? how do we fold that in?
-    #
-    js = json.loads(os.environ['KONTROL_ANNOTATIONS'])
-    if 'haproxy.unity3d.com/route53' in js:
-
-        #
-        # - extract the zone ID + the domain name
-        # - render our little jinja2 template (e.g the AWS CLI json request blurb)
-        # - use the external IP reported by each proxy pod in its payload
-        #
-        raw = \
-        """
-        {
-            "Changes": [
-            {
-                "Action": "UPSERT",
-                "ResourceRecordSet": {
-                    "Name": "{{domain}}",
-                    "Type": "A",
-                    "TTL": 60,
-                    "ResourceRecords": {{values}}
-                }
-            }]
-        }
-        """
-
-        domain = js['haproxy.unity3d.com/route53']
-        ips = [pod['payload']['eip'] for pod in pods if pod['app'] == 'haproxy']
-        with open('/data/route53.js', 'wb') as fd:
-            fd.write(Template(raw).render(domain=domain, values=json.dumps([{'Value': ip} for ip in ips])))
-
-        root = '.'.join(domain.split('.')[1:])
-        js = json.loads(''.join(shell.shell('aws route53 list-hosted-zones-by-name --max-items 1 --dns-name %s.' % root).output()))
-        zid = js['HostedZones'][0]['Id'][12:]
-        shell.shell('aws route53 change-resource-record-sets --hosted-zone-id %s --change-batch file:///data/route53.js' % zid)
-
-    #
     # - keep the HAProxy pods apart
     # - remove them from the map
     #
-    proxies = hosts['haproxy']
-    del hosts['haproxy']
+    assert labels['app'] in hosts, 'is kontrol configured as master/slave ?'
+    proxies = hosts[labels['app']]
+    del hosts[labels['app']]
 
     #
     # - compare the latest MD5 digest for that map with what
@@ -117,5 +78,15 @@ if __name__ == '__main__':
         'md5': md5,
         'hosts': hosts
     }
+
+    #
+    # - craft an external IP list, one for each proxy
+    # - this data is relayed via the kontrol payload
+    # - pick one of the proxies at random
+    # - flip its state-machine to run the Route53 udpate script (which involves the AWS CLI)
+    # - this will attempt to update the DNS information with a A record
+    #
+    external = [pod['payload']['eip'] for pod in pods if pod['app'] == labels['app']]
+    _http(random.choice(proxies), "echo WAIT expose-via-route53 '%s' | socat -t 60 - /tmp/sock" % json.dumps(external))
 
     print json.dumps(state)

@@ -13,7 +13,7 @@ ADD resources/ .
 RUN set -ex && \
     apk add --no-cache iptables && \
     apk add --no-cache --virtual .transient ca-certificates g++ libc-dev linux-headers make openssl openssl-dev pcre-dev readline-dev tar zlib-dev && \
-    pip install shell awscli && \
+    pip install awscli && \
 	wget -O lua.tar.gz "https://www.lua.org/ftp/lua-$LUA_VERSION.tar.gz" && \
     echo "$LUA_SHA1 *lua.tar.gz" | sha1sum -c && \
     mkdir -p /usr/src/lua && \

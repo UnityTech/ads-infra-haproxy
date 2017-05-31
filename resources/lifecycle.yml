@@ -11,14 +11,15 @@ states:
     #
     # - make sure /data is there
     # - output the underlying node's external IP in /data/state.json
-    #
-    mkdir -p /data
-    echo '{"eip": "'$KONTROL_EIP'"}' > /data/state.json
-
-    #
     # - append the haproxy + statsd telegraf input
     # - start telegraf
     #
+    mkdir -p /data
+    if [ -z $KONTROL_EIP ]; then
+      echo "no external IP defined on this node, aborting... (manifest and/or scheduling error ?)"
+      exit 1
+    fi
+    echo '{"eip": "'$KONTROL_EIP'"}' > /data/state.json
     cat << EOT >> /etc/telegraf/telegraf.conf
     [[inputs.statsd]]
       service_address = "127.0.0.1:8125"
@@ -31,23 +32,21 @@ states:
 - tag: configure
   shell: |
 
-    python - <<-EOF
+    CFG=$(echo $KONTROL_ANNOTATIONS | jq -r '."haproxy.unity3d.com/config"')
+    
+    python - $CFG <<-EOF
     import os
     import json
+    import sys
     from jinja2 import Template
 
     #
     # - peek into the annotations
     # - render the configuration found under haproxy.unity3d.com/config
+    # - the "host" dict is passed from the callback via $INPUT
     #
-    try:
-      js = json.loads(os.environ['KONTROL_ANNOTATIONS'])
-      cfg = js['haproxy.unity3d.com/config']
-      with open('/data/proxy.cfg', 'wb') as fd:
-          fd.write(Template(cfg).render(hosts=json.loads(os.environ['INPUT'])))    
-      
-    except (KeyError, ValueError, TypeError):
-      pass
+    with open('/data/proxy.cfg', 'wb') as fd:
+        fd.write(Template(sys.argv[1]).render(hosts=json.loads(os.environ['INPUT'])))    
     EOF
 
     #
@@ -55,8 +54,78 @@ states:
     # - this will force a reload of the HAProxy configuration
     # - SYN packets will also be disabled during that time
     #
-    supervisorctl restart haproxy  
+    if [ $? -ne 0 ]; then
+      echo "warning, unable to render the configuration file, skipping restart..."
+    else
+      supervisorctl restart haproxy
+    fi
+
   next: 
+    - configure
+    - expose-via-*
+
+- tag: expose-via-route53
+  shell: |
+
+    DOMAIN=$(echo $KONTROL_ANNOTATIONS | jq -r '."haproxy.unity3d.com/route53"')
+    PARENT=$(echo $DOMAIN | cut -d "." -f2-)
+
+    python - $DOMAIN <<-EOF
+    import os
+    import json
+    import sys
+    from jinja2 import Template
+    
+    #
+    # - update the specified Route53 hosted zone with a single A record
+    # - this record will hold 1+ external IPs for each of the haproxies
+    # - the IP list is passed by the callback via $INPUT
+    # - this code path is conditional to having the proper annotation set
+    #
+    raw = \
+    """
+    {
+        "Changes": [
+        {
+            "Action": "UPSERT",
+            "ResourceRecordSet": {
+                "Name": "{{domain}}",
+                "Type": "A",
+                "TTL": 60,
+                "ResourceRecords": {{values}}
+            }
+        }]
+    }
+    """
+    
+    ips = json.loads(os.environ['INPUT'])
+    with open('/data/route53.js', 'wb') as fd:
+        fd.write(Template(raw).render(domain=sys.argv[1], values=json.dumps([{'Value': ip} for ip in ips])))
+    EOF
+        
+    #
+    # - use the AWS cli to first lookup the zone ID for the specified domain
+    # - this will fail if ever the domain is invalid
+    #
+    LOOKUP=$(aws route53 list-hosted-zones-by-name --max-items 1 --dns-name $PARENT. | jq -r ".HostedZones[0].Id")
+    if [ $? -ne 0 ]; then
+      echo "failed to lookup the hosted zone for $PARENT, aborting... (manifest error ?)"
+      exit 1
+    fi
+
+    #
+    # - use the JSON file rendered above to update the A record
+    #
+    ZID=$(echo $LOOKUP | sed 's/\/hostedzone\/\([0-9]*[A-Z]*\)/\1/')
+    STATUS=$(aws route53 change-resource-record-sets --hosted-zone-id $ZID --change-batch file:///data/route53.js | jq -r ".ChangeInfo.Status")
+    if [ $? -ne 0 ]; then
+      echo "unable to update the DNS record (AWS API bug ?)"
+      exit 1
+    fi
+
+    echo "AWS Route53 record update requested ($STATUS)"
+
+  next:
     - configure
 
 - tag: shutdown
