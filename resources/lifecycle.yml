@@ -32,21 +32,23 @@ states:
 - tag: configure
   shell: |
 
-    CFG=$(echo $KONTROL_ANNOTATIONS | jq -r '."haproxy.unity3d.com/config"')
+    CFG=$(echo $KONTROL_ANNOTATIONS | jq '."haproxy.unity3d.com/config"')
     
-    python - $CFG <<-EOF
+    python - "$CFG" <<-EOF
     import os
     import json
     import sys
     from jinja2 import Template
 
     #
-    # - peek into the annotations
+    # - decode the raw block passed as the 1st parameter
+    # - remove the enclosing double quotes
     # - render the configuration found under haproxy.unity3d.com/config
     # - the "host" dict is passed from the callback via $INPUT
     #
     with open('/data/proxy.cfg', 'wb') as fd:
-        fd.write(Template(sys.argv[1]).render(hosts=json.loads(os.environ['INPUT'])))    
+      raw = sys.argv[1].decode('string-escape')[1:-1]
+      fd.write(Template(raw).render(hosts=json.loads(os.environ['INPUT'])))    
     EOF
 
     #
@@ -67,7 +69,13 @@ states:
 - tag: expose-via-route53
   shell: |
 
-    DOMAIN=$(echo $KONTROL_ANNOTATIONS | jq -r '."haproxy.unity3d.com/route53"')
+    #
+    # - we can have zero or more A records to update
+    # - process them in order
+    #
+    DOMAINS=$(echo $KONTROL_ANNOTATIONS | jq -r '."haproxy.unity3d.com/route53"' | select (.!=null)' | sed -e 's/^"//' -e 's/"$//')
+    for DOMAIN in $(echo $DOMAINS | sed "s/,/ /g"); do
+   
     PARENT=$(echo $DOMAIN | cut -d "." -f2-)
 
     python - $DOMAIN <<-EOF
@@ -119,11 +127,12 @@ states:
     ZID=$(echo $LOOKUP | sed 's/\/hostedzone\/\([0-9]*[A-Z]*\)/\1/')
     STATUS=$(aws route53 change-resource-record-sets --hosted-zone-id $ZID --change-batch file:///data/route53.js | jq -r ".ChangeInfo.Status")
     if [ $? -ne 0 ]; then
-      echo "unable to update the DNS record (AWS API bug ?)"
+      echo "unable to update the DNS record for $DOMAIN (AWS API bug ?)"
       exit 1
     fi
 
-    echo "AWS Route53 record update requested ($STATUS)"
+    echo "A record update requested for $DOMAIN ($STATUS)"
+    done
 
   next:
     - configure
