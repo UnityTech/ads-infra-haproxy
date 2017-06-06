@@ -1,4 +1,4 @@
-FROM registry2.applifier.info:5005/ads-infra-kontrol-alpine-3.5:1.1
+FROM registry2.applifier.info:5005/ads-infra-kontrol-alpine-3.5:1.0.0
 
 ENV KONTROL_MODE=master,slave,verbose \
     KONTROL_PAYLOAD=/data/state.json \
