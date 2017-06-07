@@ -4,8 +4,8 @@ import hashlib
 import json
 import os
 import random
-import requests
 import sys
+import zerorpc
 
 from jinja2 import Template
 
@@ -19,6 +19,24 @@ differs from the previous one.
 """
 
 if __name__ == '__main__':
+
+    assert 'KONTROL_PORT' in os.environ, '$KONTROL_PORT undefined (bug ?)'
+    port = int(os.environ['KONTROL_PORT'])
+
+    def _rpc(ip, cmd):
+        
+        try:
+
+            #
+            # - use zerorpc to request a script invokation against a given pod
+            # - default on returning None upon failure
+            #
+            client = zerorpc.Client()
+            client.connect('tcp://%s:%d' % (ip, port))
+            return client.invoke(json.dumps({'cmd': cmd}))
+            
+        except Exception:
+            return None
 
     #
     # - retrieve the latest set of pods via $PODS
@@ -50,19 +68,8 @@ if __name__ == '__main__':
     hasher.update(json.dumps(hosts))
     md5 = ':'.join(c.encode('hex') for c in hasher.digest())
     if md5 == last['md5']:
-
         print >> sys.stderr, 'no downstream changes, skipping'
         sys.exit(0)
-
-    def _http(ip, cmd):
-        try:
-            url = 'http://%s:8000/script' % ip
-            reply = requests.put(url, data=json.dumps({'cmd': cmd}), headers={'Content-Type':'application/json'})
-            reply.raise_for_status()
-            return reply.text
-
-        except Exception:
-            return None
 
     #
     # - we got a change
@@ -71,7 +78,7 @@ if __name__ == '__main__':
     # - update the state by printing it to stdout
     #
     print >> sys.stderr, '1+ downstream hosts changed, asking #%d proxies to re-configure' % len(proxies)
-    replies = [_http(ip, "echo WAIT configure '%s' | socat -t 60 - /tmp/sock" % json.dumps(hosts)) for ip in proxies]
+    replies = [_rpc(ip, "echo WAIT configure '%s' | socat -t 60 - /tmp/sock" % json.dumps(hosts)) for ip in proxies]
     assert all(reply == 'OK' for reply in replies)
     state = \
     {
@@ -86,7 +93,7 @@ if __name__ == '__main__':
     # - flip its state-machine to run the Route53 udpate script (which involves the AWS CLI)
     # - this will attempt to update the DNS information with a A record
     #
-    external = [pod['payload']['eip'] for pod in pods if pod['app'] == labels['app']]
-    _http(random.choice(proxies), "echo WAIT expose-via-route53 '%s' | socat -t 60 - /tmp/sock" % json.dumps(external))
+    ips = [pod['payload']['eip'] for pod in pods if pod['app'] == labels['app']]
+    _rpc(random.choice(proxies), "echo WAIT expose-via-route53 '%s' | socat -t 60 - /tmp/sock" % json.dumps(ips))
 
     print json.dumps(state)

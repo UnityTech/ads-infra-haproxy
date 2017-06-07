@@ -32,21 +32,21 @@ states:
 - tag: configure
   shell: |
 
-    CFG=$(echo $KONTROL_ANNOTATIONS | jq -r '."haproxy.unity3d.com/config"')
-    
-    python - $CFG <<-EOF
+    export CFG=$(echo $KONTROL_ANNOTATIONS | jq '."haproxy.unity3d.com/config" | select (.!=null)' | sed -e 's/^"//' -e 's/"$//' | awk '{gsub(/\\n/,"\n")}1')
+
+    python - <<-EOF
     import os
     import json
     import sys
     from jinja2 import Template
-
+    
     #
     # - peek into the annotations
     # - render the configuration found under haproxy.unity3d.com/config
     # - the "host" dict is passed from the callback via $INPUT
     #
     with open('/data/proxy.cfg', 'wb') as fd:
-        fd.write(Template(sys.argv[1]).render(hosts=json.loads(os.environ['INPUT'])))    
+        fd.write(Template(os.environ['CFG']).render(hosts=json.loads(os.environ['INPUT'])))    
     EOF
 
     #
@@ -67,10 +67,10 @@ states:
 - tag: expose-via-route53
   shell: |
 
-    DOMAIN=$(echo $KONTROL_ANNOTATIONS | jq -r '."haproxy.unity3d.com/route53"')
+    export DOMAIN=$(echo $KONTROL_ANNOTATIONS | jq -r '."haproxy.unity3d.com/route53"')
     PARENT=$(echo $DOMAIN | cut -d "." -f2-)
 
-    python - $DOMAIN <<-EOF
+    python - <<-EOF
     import os
     import json
     import sys
@@ -100,7 +100,7 @@ states:
     
     ips = json.loads(os.environ['INPUT'])
     with open('/data/route53.js', 'wb') as fd:
-        fd.write(Template(raw).render(domain=sys.argv[1], values=json.dumps([{'Value': ip} for ip in ips])))
+        fd.write(Template(raw).render(domain=os.environ['DOMAIN'], values=json.dumps([{'Value': ip} for ip in ips])))
     EOF
         
     #
