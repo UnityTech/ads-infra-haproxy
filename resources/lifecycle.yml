@@ -14,12 +14,12 @@ states:
     # - append the haproxy + statsd telegraf input
     # - start telegraf
     #
+    mkdir -p /data
     if [ -z $KONTROL_EIP ]; then
       echo "no external IP defined on this node, aborting... (manifest and/or scheduling error ?)"
       exit 1
     fi
     echo '{"eip": "'$KONTROL_EIP'"}' > /data/state.json
-    mkdir -p /data
     cat <<-EOF >> /etc/telegraf/telegraf.conf
     [[inputs.statsd]]
       service_address = "127.0.0.1:8125"
