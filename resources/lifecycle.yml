@@ -14,18 +14,18 @@ states:
     # - append the haproxy + statsd telegraf input
     # - start telegraf
     #
-    mkdir -p /data
     if [ -z $KONTROL_EIP ]; then
       echo "no external IP defined on this node, aborting... (manifest and/or scheduling error ?)"
       exit 1
     fi
     echo '{"eip": "'$KONTROL_EIP'"}' > /data/state.json
-    cat << EOT >> /etc/telegraf/telegraf.conf
+    mkdir -p /data
+    cat <<-EOF >> /etc/telegraf/telegraf.conf
     [[inputs.statsd]]
       service_address = "127.0.0.1:8125"
     [[inputs.haproxy]]
-    EOT
-    supervisorctl start telegraf
+    EOF
+    supervisorctl restart telegraf
   next:
     - configure
 
@@ -37,16 +37,17 @@ states:
     python - <<-EOF
     import os
     import json
-    import sys
     from jinja2 import Template
     
     #
-    # - peek into the annotations
+    # - decode the raw block passed as the 1st parameter
+    # - remove the enclosing double quotes
     # - render the configuration found under haproxy.unity3d.com/config
     # - the "host" dict is passed from the callback via $INPUT
     #
+    js = json.loads(os.environ['INPUT'])
     with open('/data/proxy.cfg', 'wb') as fd:
-        fd.write(Template(os.environ['CFG']).render(hosts=json.loads(os.environ['INPUT'])))    
+        fd.write(Template(os.environ['CFG']).render(hosts=js))  
     EOF
 
     #
@@ -67,10 +68,16 @@ states:
 - tag: expose-via-route53
   shell: |
 
-    export DOMAIN=$(echo $KONTROL_ANNOTATIONS | jq -r '."haproxy.unity3d.com/route53"')
+    #
+    # - we can have zero or more A records to update
+    # - process them in order
+    #
+    DOMAINS=$(echo $KONTROL_ANNOTATIONS | jq -r '."haproxy.unity3d.com/route53" | select (.!=null)' | sed -e 's/^"//' -e 's/"$//')
+    for DOMAIN in $(echo $DOMAINS | sed "s/,/ /g"); do
     PARENT=$(echo $DOMAIN | cut -d "." -f2-)
-
-    python - <<-EOF
+    
+    echo processing domain $DOMAIN
+    python - $DOMAIN <<-EOF
     import os
     import json
     import sys
@@ -98,9 +105,9 @@ states:
     }
     """
     
-    ips = json.loads(os.environ['INPUT'])
+    js = json.loads(os.environ['INPUT'])
     with open('/data/route53.js', 'wb') as fd:
-        fd.write(Template(raw).render(domain=os.environ['DOMAIN'], values=json.dumps([{'Value': ip} for ip in ips])))
+        fd.write(Template(raw).render(domain=sys.argv[1], values=json.dumps([{'Value': ip} for ip in js])))
     EOF
         
     #
@@ -119,11 +126,12 @@ states:
     ZID=$(echo $LOOKUP | sed 's/\/hostedzone\/\([0-9]*[A-Z]*\)/\1/')
     STATUS=$(aws route53 change-resource-record-sets --hosted-zone-id $ZID --change-batch file:///data/route53.js | jq -r ".ChangeInfo.Status")
     if [ $? -ne 0 ]; then
-      echo "unable to update the DNS record (AWS API bug ?)"
+      echo "unable to update the DNS record for $DOMAIN (AWS API bug ?)"
       exit 1
     fi
 
-    echo "AWS Route53 record update requested ($STATUS)"
+    echo "A record update requested for $DOMAIN ($STATUS)"
+    done
 
   next:
     - configure

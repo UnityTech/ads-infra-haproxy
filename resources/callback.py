@@ -23,8 +23,7 @@ if __name__ == '__main__':
     assert 'KONTROL_PORT' in os.environ, '$KONTROL_PORT undefined (bug ?)'
     port = int(os.environ['KONTROL_PORT'])
 
-    def _rpc(ip, cmd):
-        
+    def _rpc(ip, cmd):        
         try:
 
             #
